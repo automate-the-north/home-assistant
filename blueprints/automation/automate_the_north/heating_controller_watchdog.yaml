@@ -1,0 +1,73 @@
+blueprint:
+  name: Heating controller alarm and connection watchdog
+  author: Automate the North
+  description: >
+    Notifies when a heating controller raises an alarm or stops answering. Made for
+    the Ouman H23 package, but works with any pair of binary sensors: one that is on
+    while any alarm is active, and one that is on while the connection is lost.
+
+
+    By default it creates a Home Assistant notification. Replace the actions with
+    your own, for example a phone notification or a script that sends a critical
+    alert.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/automation/automate_the_north/heating_controller_watchdog.yaml
+  domain: automation
+  input:
+    alarm:
+      name: Alarm sensor
+      description: A binary sensor that is on while any controller alarm is active.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+    connection_lost:
+      name: Connection lost sensor
+      description: A binary sensor that is on while the controller doesn't answer.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+    on_alarm:
+      name: Actions on alarm
+      default:
+        - action: persistent_notification.create
+          data:
+            title: Heating controller alarm
+            message: The heating controller reports an active alarm. Check the controller.
+      selector:
+        action: {}
+    on_connection_lost:
+      name: Actions when the connection is lost
+      default:
+        - action: persistent_notification.create
+          data:
+            title: Heating controller not answering
+            message: >-
+              No answer from the heating controller. Heating keeps running on the
+              controller's own control, but Home Assistant can't see it.
+      selector:
+        action: {}
+
+mode: queued
+max: 10
+
+triggers:
+  - trigger: state
+    id: alarm
+    entity_id: !input alarm
+    to: 'on'
+  - trigger: state
+    id: connection_lost
+    entity_id: !input connection_lost
+    to: 'on'
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: alarm
+        sequence: !input on_alarm
+      - conditions:
+          - condition: trigger
+            id: connection_lost
+        sequence: !input on_connection_lost
