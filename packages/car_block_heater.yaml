@@ -1,0 +1,78 @@
+# Car block heater: helpers and heating time.
+# Save as config/packages/car_block_heater.yaml (packages must be enabled in configuration.yaml).
+# Replace sensor.outdoor_temperature with your own outdoor temperature sensor.
+# For a second car, copy the block and change "car" to e.g. "car_2".
+
+input_datetime:
+  car_departure_time:
+    name: Car departure time
+    has_date: false
+    has_time: true
+    icon: mdi:clock-outline
+
+input_boolean:
+  car_heating_schedule:
+    name: Car scheduled heating
+    icon: mdi:calendar-clock
+
+# Heating time for each temperature band. Adjust these from the dashboard;
+# Home Assistant remembers the values across restarts.
+input_number:
+  car_heating_minus_20:
+    name: Car heating time at −20 °C or colder
+    min: 0
+    max: 180
+    step: 5
+    mode: box
+    unit_of_measurement: min
+  car_heating_minus_10:
+    name: Car heating time at −10 to −20 °C
+    min: 0
+    max: 180
+    step: 5
+    mode: box
+    unit_of_measurement: min
+  car_heating_minus_5:
+    name: Car heating time at −5 to −10 °C
+    min: 0
+    max: 180
+    step: 5
+    mode: box
+    unit_of_measurement: min
+  car_heating_below_5:
+    name: Car heating time below +5 °C
+    min: 0
+    max: 180
+    step: 5
+    mode: box
+    unit_of_measurement: min
+
+template:
+  - sensor:
+      # Minutes of heating at the current outdoor temperature, from the times above
+      - name: Car heating time
+        unique_id: car_heating_time
+        unit_of_measurement: min
+        icon: mdi:timer-outline
+        state: >
+          {% set t = states('sensor.outdoor_temperature') | float(99) %}
+          {% if t <= -20 %}{{ states('input_number.car_heating_minus_20') | int(0) }}
+          {% elif t <= -10 %}{{ states('input_number.car_heating_minus_10') | int(0) }}
+          {% elif t <= -5 %}{{ states('input_number.car_heating_minus_5') | int(0) }}
+          {% elif t < 5 %}{{ states('input_number.car_heating_below_5') | int(0) }}
+          {% else %}0
+          {% endif %}
+
+      # When heating starts, for the dashboard
+      - name: Car heating starts
+        unique_id: car_heating_starts
+        icon: mdi:clock-start
+        state: >
+          {% set h = state_attr('input_datetime.car_departure_time', 'hour') | int(0) %}
+          {% set m = state_attr('input_datetime.car_departure_time', 'minute') | int(0) %}
+          {% set dep = h * 60 + m %}
+          {% set dur = states('sensor.car_heating_time') | int(0) %}
+          {% if dur == 0 %}none{% else %}
+          {% set start = (dep - dur) % 1440 %}
+          {{ '%02d:%02d' | format(start // 60, start % 60) }}
+          {% endif %}

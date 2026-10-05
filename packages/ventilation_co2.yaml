@@ -1,0 +1,25 @@
+# Ventilation: CO₂ boost and away mode. Helpers used by the
+# "Ventilation boost by CO2, away mode by presence" blueprint.
+# Save as config/packages/ventilation_co2.yaml (packages must be enabled in configuration.yaml).
+
+input_boolean:
+  co2_boost_enabled:
+    name: CO₂ boost
+    icon: mdi:fan-plus
+
+# Limits, adjustable from the dashboard. Home Assistant remembers the values across restarts.
+input_number:
+  co2_boost_above:
+    name: CO₂ boost starts above
+    min: 500
+    max: 2000
+    step: 50
+    mode: box
+    unit_of_measurement: ppm
+  co2_boost_below:
+    name: CO₂ boost ends below
+    min: 400
+    max: 1500
+    step: 50
+    mode: box
+    unit_of_measurement: ppm

@@ -1,0 +1,99 @@
+# Dashboard section for the Ouman H23. In a Sections view: add section → ⋮ → Edit in YAML, paste this.
+type: grid
+cards:
+  - type: heading
+    heading: 'District heating'
+    heading_style: title
+    icon: mdi:radiator
+    badges:
+      - type: entity
+        entity: sensor.ouman_outdoor_temperature
+        name: 'Outside'
+        icon: mdi:thermometer
+        show_name: false
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- macro t(e) -%}{{ (states(e) | float | round(1) | string) if has_value(e) else '–' }}{%- endmacro -%}
+      {%- set active = [
+        ('binary_sensor.ouman_alarm_dhw_high_temperature', 'hot water too hot'),
+        ('binary_sensor.ouman_alarm_l1_supply_deviation', 'supply temperature off target'),
+        ('binary_sensor.ouman_alarm_l1_return_low', 'return temperature too low'),
+        ('binary_sensor.ouman_sensor_fault_m1_outdoor', 'outdoor sensor fault'),
+        ('binary_sensor.ouman_sensor_fault_m2_l1_supply', 'supply sensor fault'),
+        ('binary_sensor.ouman_sensor_fault_m3_l1_return', 'return sensor fault'),
+        ('binary_sensor.ouman_sensor_fault_m8_dhw_supply', 'hot water sensor fault'),
+        ('binary_sensor.ouman_sensor_fault_m9_dhw_circulation', 'circulation sensor fault')
+      ] | selectattr(0, 'is_state', 'on') | map(attribute=1) | list -%}
+      {%- if is_state('binary_sensor.ouman_connection_lost', 'on') -%}
+      ## No connection to the controller
+      Heating keeps running on the controller's own control. Check the Modbus gateway.
+      {%- elif active -%}
+      ## Alarm: {{ active | join(', ') }}
+      Check the controller.
+      {%- elif is_state('binary_sensor.ouman_l1_summer_shutdown', 'on') -%}
+      ## Summer shutdown
+      Space heating is off. Hot water is {{ t('sensor.ouman_dhw_supply_temperature') }} °C.
+      {%- else -%}
+      ## Heating normally
+      Supply {{ t('sensor.ouman_l1_supply_temperature') }} °C (target {{ t('sensor.ouman_l1_supply_setpoint') }} °C), return {{ t('sensor.ouman_l1_return_temperature') }} °C. Valve {{ states('sensor.ouman_l1_valve_position') }} % open.
+      {%- endif -%}
+  - type: tile
+    entity: sensor.ouman_l1_supply_temperature
+    name: 'Supply'
+    icon: mdi:thermometer-chevron-up
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_return_temperature
+    name: 'Return'
+    icon: mdi:thermometer-chevron-down
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_supply_setpoint
+    name: 'Supply target'
+    icon: mdi:target
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_valve_position
+    name: 'Valve'
+    icon: mdi:valve
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_dhw_supply_temperature
+    name: 'Hot water'
+    icon: mdi:water-thermometer
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_dhw_circulation_temperature
+    name: 'Hot water circulation'
+    icon: mdi:water-sync
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: history-graph
+    title: 'Last 24 hours'
+    hours_to_show: 24
+    grid_options:
+      columns: full
+    entities:
+      - entity: sensor.ouman_l1_supply_temperature
+        name: 'Supply'
+      - entity: sensor.ouman_l1_supply_setpoint
+        name: 'Supply target'
+      - entity: sensor.ouman_l1_return_temperature
+        name: 'Return'
+      - entity: sensor.ouman_delayed_outdoor_temperature
+        name: 'Outside (smoothed)'

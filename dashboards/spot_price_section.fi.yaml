@@ -1,0 +1,82 @@
+# Sähkön hinnan dashboard-osio. Sections-näkymässä: lisää osio → ⋮ → Muokkaa YAML:na ja liitä tämä.
+type: grid
+cards:
+  - type: heading
+    heading: Sähkö
+    heading_style: title
+    icon: mdi:flash
+    badges:
+      - type: entity
+        entity: sensor.electricity_price_now
+        show_icon: true
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- set fmt = '%.2f' -%}
+      {%- set p = states('sensor.electricity_price_now') | float(none) -%}
+      {%- set lvl = states('sensor.electricity_price_level') -%}
+      {%- set pct = state_attr('sensor.electricity_price_level', 'percent_vs_average') | int(0) -%}
+      {%- set w = 'sensor.cheapest_window_start' -%}
+      ## {{ (fmt | format(p)) | replace('.', ',') if p is not none else '–' }} snt/kWh juuri nyt
+      {% if lvl in ['cheap', 'normal', 'expensive'] -%}
+      {{ {'cheap': 'Halpa', 'normal': 'Keskitaso', 'expensive': 'Kallis'}[lvl] }},
+      {%- if pct == 0 %} sama kuin seuraavan 24 tunnin keskihinta.
+      {%- else %} {{ pct | abs }} % {{ 'yli' if pct > 0 else 'alle' }} seuraavan 24 tunnin keskihinnan.{% endif %}
+      {%- endif %}
+
+      {% if has_value(w) -%}
+      {%- set a = states(w) | as_datetime | as_local -%}
+      {%- set b = state_attr(w, 'end') | as_datetime | as_local -%}
+      {%- set st = state_attr(w, 'status') -%}
+      Halvin {{ (state_attr(w, 'periods') | int(0)) * 15 }} min {{ 'tänään' if state_attr(w, 'day') == 'today' else 'huomenna' }}: **klo {{ a.strftime('%H.%M') }}–{{ b.strftime('%H.%M') }}**, keskimäärin {{ (fmt | format(state_attr(w, 'average_price') | float(0))) | replace('.', ',') }} snt/kWh
+      {%- if st == 'active' %} (nyt menossa){% elif st == 'past' %} (jo mennyt){% endif %}.
+      {%- else -%}
+      Halvimman ajan laskemiseen ei ole vielä hintatietoja.
+      {%- endif %}
+  - type: tile
+    entity: sensor.electricity_price_next
+    name: Seuraava 15 min
+    icon: mdi:flash-outline
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.electricity_price_average_24h
+    name: Keskihinta, seuraavat 24 h
+    icon: mdi:chart-line
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.cheapest_window_price
+    name: Halvin aika
+    icon: mdi:cash-check
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.cheapest_window_saving
+    name: Säästö odottamalla
+    icon: mdi:piggy-bank
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: entities
+    title: Asetukset
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.cheapest_window_minutes
+        name: Kesto
+      - entity: input_number.cheapest_window_earliest
+        name: Aikaisintaan klo
+      - entity: input_number.cheapest_window_latest
+        name: Viimeistään klo
+      - entity: input_number.electricity_margin
+        name: Marginaali (sis. alv)
+      - entity: input_number.electricity_vat
+        name: Arvonlisävero

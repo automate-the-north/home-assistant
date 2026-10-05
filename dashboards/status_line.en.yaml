@@ -1,0 +1,24 @@
+# Status line: one markdown card that turns several entities into a headline and a sentence.
+# Put it first in a dashboard section. Check the cases from most to least urgent; the first match wins.
+type: markdown
+text_only: true
+grid_options:
+  columns: full
+content: |-
+  {%- set temp = states('sensor.outdoor_temperature') | float(none) -%}
+  {%- if not has_value('switch.device') -%}
+  ## Device offline
+  The plug isn't responding. Check that it has power and Wi-Fi.
+  {%- elif is_state('switch.device', 'on') -%}
+  ## Running now
+  On since {{ (states.switch.device.last_changed | as_local).strftime('%H:%M') }}.
+  {%- elif is_state('input_boolean.device_schedule', 'off') -%}
+  ## Schedule off
+  Nothing runs until you switch it on.
+  {%- else -%}
+  {%- set next = today_at(states('sensor.device_next_run')) -%}
+  {%- if next < now() -%}{%- set next = next + timedelta(days=1) -%}{%- endif %}
+  ## Next run at {{ states('sensor.device_next_run') }}
+  {%- set mins = ((next - now()).total_seconds() // 60) | int %}
+  That's in {{ mins // 60 }} h {{ mins % 60 }} min.
+  {%- endif -%}

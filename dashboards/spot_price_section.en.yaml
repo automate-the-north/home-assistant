@@ -1,0 +1,81 @@
+# Dashboard section for electricity prices. In a Sections view: add section → ⋮ → Edit in YAML, paste this.
+type: grid
+cards:
+  - type: heading
+    heading: Electricity
+    heading_style: title
+    icon: mdi:flash
+    badges:
+      - type: entity
+        entity: sensor.electricity_price_now
+        show_icon: true
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- set p = states('sensor.electricity_price_now') | float(none) -%}
+      {%- set lvl = states('sensor.electricity_price_level') -%}
+      {%- set pct = state_attr('sensor.electricity_price_level', 'percent_vs_average') | int(0) -%}
+      {%- set w = 'sensor.cheapest_window_start' -%}
+      ## {{ '%.2f' | format(p) if p is not none else '–' }} c/kWh right now
+      {% if lvl in ['cheap', 'normal', 'expensive'] -%}
+      {{ {'cheap': 'Cheap', 'normal': 'Normal', 'expensive': 'Expensive'}[lvl] }},
+      {%- if pct == 0 %} the same as the next 24 hours' average.
+      {%- else %} {{ pct | abs }} % {{ 'above' if pct > 0 else 'below' }} the next 24 hours' average.{% endif %}
+      {%- endif %}
+
+      {% if has_value(w) -%}
+      {%- set a = states(w) | as_datetime | as_local -%}
+      {%- set b = state_attr(w, 'end') | as_datetime | as_local -%}
+      {%- set st = state_attr(w, 'status') -%}
+      Cheapest {{ (state_attr(w, 'periods') | int(0)) * 15 }} min {{ state_attr(w, 'day') }}: **{{ a.strftime('%H:%M') }}–{{ b.strftime('%H:%M') }}**, {{ '%.2f' | format(state_attr(w, 'average_price') | float(0)) }} c/kWh on average
+      {%- if st == 'active' %} (now){% elif st == 'past' %} (already passed){% endif %}.
+      {%- else -%}
+      No price data for the window yet.
+      {%- endif %}
+  - type: tile
+    entity: sensor.electricity_price_next
+    name: Next 15 min
+    icon: mdi:flash-outline
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.electricity_price_average_24h
+    name: Average, next 24 h
+    icon: mdi:chart-line
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.cheapest_window_price
+    name: Cheapest window
+    icon: mdi:cash-check
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.cheapest_window_saving
+    name: Saving by waiting
+    icon: mdi:piggy-bank
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: entities
+    title: Settings
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.cheapest_window_minutes
+        name: Window length
+      - entity: input_number.cheapest_window_earliest
+        name: Earliest start
+      - entity: input_number.cheapest_window_latest
+        name: Latest end
+      - entity: input_number.electricity_margin
+        name: Margin (incl. VAT)
+      - entity: input_number.electricity_vat
+        name: VAT

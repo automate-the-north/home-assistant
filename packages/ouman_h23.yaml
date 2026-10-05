@@ -1,0 +1,406 @@
+# Ouman H23 district heating controller over Modbus: read-only monitoring.
+# Save as config/packages/ouman_h23.yaml (packages must be enabled in configuration.yaml).
+#
+# Connection: a Modbus TCP-to-RTU gateway (RS-485 to Ethernet) wired to the H23's RS-485 port.
+# Replace the host with your gateway's address. Register addresses follow the official
+# H23 v2.0.1 Modbus register list. Values are 32-bit, read here as the low 16-bit word,
+# which covers every value this package uses.
+#
+# L1 = heating circuit 1, DHW = domestic hot water.
+# This package only reads. Nothing here writes to the controller.
+
+modbus:
+  - name: ouman_h23
+    type: tcp
+    host: 192.0.2.10 # your Modbus gateway
+    port: 502
+    delay: 1
+    timeout: 5
+
+    sensors:
+      # ---------- Measurements ----------
+      - name: Ouman outdoor temperature
+        unique_id: ouman_h23_outdoor
+        slave: 1
+        address: 201
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman L1 supply temperature
+        unique_id: ouman_h23_l1_supply
+        slave: 1
+        address: 203
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman L1 return temperature
+        unique_id: ouman_h23_l1_return
+        slave: 1
+        address: 205
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman DHW supply temperature
+        unique_id: ouman_h23_dhw_supply
+        slave: 1
+        address: 215
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman DHW circulation temperature
+        unique_id: ouman_h23_dhw_circulation
+        slave: 1
+        address: 217
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      # ---------- Control ----------
+      - name: Ouman L1 supply setpoint
+        unique_id: ouman_h23_l1_setpoint
+        slave: 1
+        address: 285 # calculated supply water setpoint
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman L1 setpoint from curve
+        unique_id: ouman_h23_l1_curve_value
+        slave: 1
+        address: 287 # supply water according to the heating curve
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+
+      - name: Ouman L1 valve position
+        unique_id: ouman_h23_l1_valve
+        slave: 1
+        address: 613
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: '%'
+        state_class: measurement
+
+      - name: Ouman L1 summer shutdown raw
+        unique_id: ouman_h23_l1_summer_shutdown_raw
+        slave: 1
+        address: 293 # 1 = summer shutdown active
+        input_type: holding
+        data_type: uint16
+
+      - name: Ouman DHW setpoint
+        unique_id: ouman_h23_dhw_setpoint
+        slave: 1
+        address: 593
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        scan_interval: 600
+
+      - name: Ouman DHW valve position
+        unique_id: ouman_h23_dhw_valve
+        slave: 1
+        address: 225
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: '%'
+        state_class: measurement
+
+      - name: Ouman delayed outdoor temperature
+        unique_id: ouman_h23_outdoor_delayed
+        slave: 1
+        address: 279 # the smoothed outdoor value the controller actually uses
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: °C
+        device_class: temperature
+        state_class: measurement
+        scan_interval: 60
+
+      # ---------- L1 heating curve (whole degrees, read every 10 min) ----------
+      # The end points are fixed at -20 °C and +20 °C outdoors.
+      - name: Ouman L1 curve supply at -20
+        unique_id: ouman_h23_l1_curve_out1
+        slave: 1
+        address: 502
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 2 outdoor
+        unique_id: ouman_h23_l1_curve_in2
+        slave: 1
+        address: 504
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 2 supply
+        unique_id: ouman_h23_l1_curve_out2
+        slave: 1
+        address: 506
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 3 outdoor
+        unique_id: ouman_h23_l1_curve_in3
+        slave: 1
+        address: 508
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 3 supply
+        unique_id: ouman_h23_l1_curve_out3
+        slave: 1
+        address: 510
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 4 outdoor
+        unique_id: ouman_h23_l1_curve_in4
+        slave: 1
+        address: 512
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve point 4 supply
+        unique_id: ouman_h23_l1_curve_out4
+        slave: 1
+        address: 514
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 curve supply at +20
+        unique_id: ouman_h23_l1_curve_out5
+        slave: 1
+        address: 516
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 supply minimum
+        unique_id: ouman_h23_l1_supply_min
+        slave: 1
+        address: 518
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+      - name: Ouman L1 supply maximum
+        unique_id: ouman_h23_l1_supply_max
+        slave: 1
+        address: 520
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: °C
+        scan_interval: 600
+
+      # ---------- Alarms (raw; bit 0 = active) ----------
+      - name: Ouman alarm raw DHW high temperature
+        unique_id: ouman_h23_alarm_dhw_high
+        slave: 1
+        address: 532
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw L1 supply deviation
+        unique_id: ouman_h23_alarm_l1_deviation
+        slave: 1
+        address: 533
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw L1 return low
+        unique_id: ouman_h23_alarm_l1_return_low
+        slave: 1
+        address: 674
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw sensor M1 outdoor
+        unique_id: ouman_h23_alarm_m1
+        slave: 1
+        address: 643
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw sensor M2 L1 supply
+        unique_id: ouman_h23_alarm_m2
+        slave: 1
+        address: 644
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw sensor M3 L1 return
+        unique_id: ouman_h23_alarm_m3
+        slave: 1
+        address: 645
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw sensor M8 DHW supply
+        unique_id: ouman_h23_alarm_m8
+        slave: 1
+        address: 650
+        input_type: holding
+        data_type: uint16
+      - name: Ouman alarm raw sensor M9 DHW circulation
+        unique_id: ouman_h23_alarm_m9
+        slave: 1
+        address: 651
+        input_type: holding
+        data_type: uint16
+
+template:
+  - sensor:
+      # Supply minus return: how much heat the radiators or floor loops take out
+      - name: Ouman L1 temperature drop
+        unique_id: ouman_h23_l1_delta
+        unit_of_measurement: °C
+        state_class: measurement
+        state: >
+          {{ (states('sensor.ouman_l1_supply_temperature') | float
+              - states('sensor.ouman_l1_return_temperature') | float) | round(1) }}
+        availability: >
+          {{ has_value('sensor.ouman_l1_supply_temperature')
+             and has_value('sensor.ouman_l1_return_temperature') }}
+
+      # Measured supply minus setpoint: positive = warmer than asked
+      - name: Ouman L1 control error
+        unique_id: ouman_h23_l1_control_error
+        unit_of_measurement: °C
+        state_class: measurement
+        state: >
+          {{ (states('sensor.ouman_l1_supply_temperature') | float
+              - states('sensor.ouman_l1_supply_setpoint') | float) | round(1) }}
+        availability: >
+          {{ has_value('sensor.ouman_l1_supply_temperature')
+             and has_value('sensor.ouman_l1_supply_setpoint') }}
+
+  - binary_sensor:
+      - name: Ouman L1 summer shutdown
+        unique_id: ouman_h23_l1_summer_shutdown
+        state: "{{ states('sensor.ouman_l1_summer_shutdown_raw') | int(0) == 1 }}"
+
+      - name: Ouman alarm DHW high temperature
+        unique_id: ouman_h23_bs_dhw_high
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_dhw_high_temperature') | int(0) % 2 == 1 }}"
+      - name: Ouman alarm L1 supply deviation
+        unique_id: ouman_h23_bs_l1_deviation
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_l1_supply_deviation') | int(0) % 2 == 1 }}"
+      - name: Ouman alarm L1 return low
+        unique_id: ouman_h23_bs_l1_return_low
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_l1_return_low') | int(0) % 2 == 1 }}"
+      - name: Ouman sensor fault M1 outdoor
+        unique_id: ouman_h23_bs_m1
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_sensor_m1_outdoor') | int(0) % 2 == 1 }}"
+      - name: Ouman sensor fault M2 L1 supply
+        unique_id: ouman_h23_bs_m2
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_sensor_m2_l1_supply') | int(0) % 2 == 1 }}"
+      - name: Ouman sensor fault M3 L1 return
+        unique_id: ouman_h23_bs_m3
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_sensor_m3_l1_return') | int(0) % 2 == 1 }}"
+      - name: Ouman sensor fault M8 DHW supply
+        unique_id: ouman_h23_bs_m8
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_sensor_m8_dhw_supply') | int(0) % 2 == 1 }}"
+      - name: Ouman sensor fault M9 DHW circulation
+        unique_id: ouman_h23_bs_m9
+        device_class: problem
+        state: "{{ states('sensor.ouman_alarm_raw_sensor_m9_dhw_circulation') | int(0) % 2 == 1 }}"
+
+      # No answer from the controller for 5 minutes
+      - name: Ouman connection lost
+        unique_id: ouman_h23_bs_offline
+        device_class: problem
+        state: "{{ not has_value('sensor.ouman_outdoor_temperature') }}"
+        delay_on:
+          minutes: 5
+
+      - name: Ouman any alarm
+        unique_id: ouman_h23_bs_any_alarm
+        device_class: problem
+        state: >
+          {{ ['binary_sensor.ouman_alarm_dhw_high_temperature',
+              'binary_sensor.ouman_alarm_l1_supply_deviation',
+              'binary_sensor.ouman_alarm_l1_return_low',
+              'binary_sensor.ouman_sensor_fault_m1_outdoor',
+              'binary_sensor.ouman_sensor_fault_m2_l1_supply',
+              'binary_sensor.ouman_sensor_fault_m3_l1_return',
+              'binary_sensor.ouman_sensor_fault_m8_dhw_supply',
+              'binary_sensor.ouman_sensor_fault_m9_dhw_circulation']
+             | select('is_state', 'on') | list | count > 0 }}
+
+automation:
+  - id: ouman_h23_fault_alert
+    alias: Ouman – alarm or connection lost
+    description: Notifies when the controller raises an alarm or stops answering.
+    mode: queued
+    triggers:
+      - trigger: state
+        id: connection
+        entity_id: binary_sensor.ouman_connection_lost
+        to: 'on'
+      - trigger: state
+        id: alarm
+        entity_id: binary_sensor.ouman_any_alarm
+        to: 'on'
+    actions:
+      - variables:
+          title: >-
+            {{ 'Heating controller not answering' if trigger.id == 'connection' else 'Heating controller alarm' }}
+          message: >-
+            {% if trigger.id == 'connection' %}No answer from the Ouman for 5 minutes. Heating keeps running on the
+            controller's own control, but Home Assistant can't see it. Check the Modbus gateway and the controller.
+            {% else %}The Ouman H23 reports an active alarm. Check the controller.{% endif %}
+      - action: persistent_notification.create
+        data:
+          title: '{{ title }}'
+          message: '{{ message }}'
+      # Replace with your phone's notify service
+      - action: notify.mobile_app_your_phone
+        data:
+          title: '{{ title }}'
+          message: '{{ message }}'

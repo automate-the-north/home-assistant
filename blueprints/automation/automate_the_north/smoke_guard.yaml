@@ -1,0 +1,168 @@
+blueprint:
+  name: Smoke guard for ventilation
+  author: Automate the North
+  description: >
+    Switches the ventilation off when a smoke sensor turns on, and back on once the air has
+    stayed clean for a while.
+
+
+    **How it works**
+
+    - When the smoke sensor turns on, the ventilation switches off and a flag remembers that
+    this automation did it.
+
+    - When the sensor has been off for the stabilisation time, the ventilation switches back on.
+    If smoke returns before that, the wait starts over.
+
+    - If you switch the ventilation on yourself while it's stopped, the guard steps aside
+    until the next smoke alarm.
+
+    - After a Home Assistant restart, a five-minute check finishes a wait that was cut short.
+
+    - When the guard toggle is off, this automation never touches the ventilation.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/automation/automate_the_north/smoke_guard.yaml
+  domain: automation
+  input:
+    smoke:
+      name: Smoke sensor
+      description: A binary sensor that is on when the outdoor air is smoky.
+      selector:
+        entity:
+          filter:
+            - domain: binary_sensor
+    ventilation:
+      name: Ventilation
+      description: The ventilation unit as a fan entity.
+      selector:
+        entity:
+          filter:
+            - domain: fan
+    enabled:
+      name: Guard toggle
+      description: An input_boolean that turns the smoke guard on or off.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    stopped:
+      name: Stopped flag
+      description: An input_boolean this automation turns on while it has the ventilation switched off.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    stable_minutes:
+      name: Stabilisation time
+      description: How long the air must stay clean before the ventilation switches back on.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: min
+    on_stop:
+      name: Extra actions when stopped
+      description: Optional, for example a notification.
+      default: []
+      selector:
+        action: {}
+    on_start:
+      name: Extra actions when restarted
+      description: Optional, for example a notification.
+      default: []
+      selector:
+        action: {}
+
+mode: queued
+max: 10
+
+# trigger_variables are available in triggers (the 'for' below) as well as in actions
+trigger_variables:
+  smoke: !input smoke
+  stopped: !input stopped
+  stable: !input stable_minutes
+
+triggers:
+  - trigger: state
+    id: smoke
+    entity_id: !input smoke
+    to: 'on'
+  # Guard switched on while smoke is already present
+  - trigger: state
+    id: smoke
+    entity_id: !input enabled
+    to: 'on'
+  - trigger: state
+    id: clean
+    entity_id: !input smoke
+    to: 'off'
+    for:
+      minutes: '{{ stable | int(10) }}'
+  - trigger: state
+    id: manual
+    entity_id: !input ventilation
+    to: 'on'
+  # Finishes a wait that a restart cut short
+  - trigger: time_pattern
+    id: watchdog
+    minutes: /5
+
+conditions:
+  - condition: state
+    entity_id: !input enabled
+    state: 'on'
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: smoke
+          - condition: state
+            entity_id: !input smoke
+            state: 'on'
+          - condition: state
+            entity_id: !input stopped
+            state: 'off'
+        sequence:
+          - action: fan.turn_off
+            target:
+              entity_id: !input ventilation
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input stopped
+          - choose: []
+            default: !input on_stop
+
+      - conditions:
+          - condition: trigger
+            id: [clean, watchdog]
+          - condition: state
+            entity_id: !input stopped
+            state: 'on'
+          - condition: template
+            value_template: >-
+              {{ is_state(smoke, 'off')
+                 and (now() - states[smoke].last_changed).total_seconds() >= stable | int(10) * 60 }}
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input stopped
+          - action: fan.turn_on
+            target:
+              entity_id: !input ventilation
+          - choose: []
+            default: !input on_start
+
+      # Switched on by hand (not by this automation) while stopped: step aside
+      - conditions:
+          - condition: trigger
+            id: manual
+          - condition: state
+            entity_id: !input stopped
+            state: 'on'
+          - condition: template
+            value_template: '{{ trigger.to_state.context.parent_id is none }}'
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input stopped

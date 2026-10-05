@@ -1,0 +1,44 @@
+# Valinnainen hintakaavio. Vaatii HACS:sta apexcharts-card-kortin. Lisää osioon korttina (Muokkaa YAML:na).
+type: custom:apexcharts-card
+header:
+  show: true
+  title: Pörssisähkö tänään (snt/kWh, sis. alv ja marginaali)
+graph_span: 24h
+span:
+  start: day
+now:
+  show: true
+  label: nyt
+yaxis:
+  - min: ~0
+    decimals: 2
+series:
+  # Koko päivän 15 minuutin hinnat sensor.electricity_prices -sensorin attribuutista
+  - entity: sensor.electricity_prices
+    name: Pörssihinta
+    type: column
+    color: '#5c9ece'
+    unit: ' snt/kWh'
+    float_precision: 2
+    data_generator: |
+      const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      const s = d0.getTime(), e = s + 86400000;
+      return entity.attributes.prices
+        .filter((p) => p.ts * 1000 >= s && p.ts * 1000 < e)
+        .map((p) => [p.ts * 1000, p.p]);
+  # Samat pylväät korostettuna halvimman ajan kohdalta
+  - entity: sensor.electricity_prices
+    name: Halvin aika
+    type: column
+    color: '#57bb8a'
+    unit: ' snt/kWh'
+    float_precision: 2
+    data_generator: |
+      const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      const s = d0.getTime(), e = s + 86400000;
+      const w = hass.states['sensor.cheapest_window_start'];
+      const ws = w && w.attributes.end ? new Date(w.state).getTime() : 0;
+      const we = w && w.attributes.end ? new Date(w.attributes.end).getTime() : 0;
+      return entity.attributes.prices
+        .filter((p) => p.ts * 1000 >= s && p.ts * 1000 < e)
+        .map((p) => [p.ts * 1000, p.ts * 1000 >= ws && p.ts * 1000 < we ? p.p : null]);

@@ -1,0 +1,128 @@
+# Smoke guard: decides when outdoor air is smoky, compared with official regional readings.
+# Save as config/packages/smoke_guard.yaml (packages must be enabled in configuration.yaml).
+#
+# Replace before use:
+#   YOUR_STATION_ID                 FMI air quality station (fmisid) near you
+#   sensor.outdoor_pm2_5            your own outdoor PM2.5 sensor (µg/m³)
+#   sensor.outdoor_pm10             your own outdoor PM10 sensor (µg/m³)
+
+# Official hourly PM averages from the Finnish Meteorological Institute (open data, no API key).
+# Values are published about an hour after the measurement hour.
+rest:
+  - resource_template: >-
+      https://opendata.fmi.fi/wfs?service=WFS&version=2.0.0&request=getFeature&storedquery_id=urban::observations::airquality::hourly::simple&fmisid=YOUR_STATION_ID&parameters=PM25_PT1H_avg,PM10_PT1H_avg&starttime={{ (utcnow() - timedelta(hours=4)).strftime('%Y-%m-%dT%H:00:00Z') }}
+    scan_interval: 900
+    timeout: 30
+    sensor:
+      - name: FMI background PM2.5
+        unique_id: fmi_background_pm2_5
+        unit_of_measurement: μg/m³
+        device_class: pm25
+        state_class: measurement
+        value_template: >
+          {% set m = value_json['wfs:FeatureCollection']['wfs:member'] | default([]) %}
+          {% set m = m if m is list else [m] %}
+          {% set v = m | map(attribute='BsWfs:BsWfsElement')
+                       | selectattr('BsWfs:ParameterName', 'eq', 'PM25_PT1H_avg')
+                       | rejectattr('BsWfs:ParameterValue', 'eq', 'NaN') | list %}
+          {{ (v | last)['BsWfs:ParameterValue'] | float if v | count > 0 else none }}
+      - name: FMI background measured
+        unique_id: fmi_background_measured
+        device_class: timestamp
+        value_template: >
+          {% set m = value_json['wfs:FeatureCollection']['wfs:member'] | default([]) %}
+          {% set m = m if m is list else [m] %}
+          {% set v = m | map(attribute='BsWfs:BsWfsElement')
+                       | selectattr('BsWfs:ParameterName', 'eq', 'PM25_PT1H_avg')
+                       | rejectattr('BsWfs:ParameterValue', 'eq', 'NaN') | list %}
+          {{ (v | last)['BsWfs:Time'] if v | count > 0 else none }}
+
+input_boolean:
+  smoke_guard_enabled:
+    name: Smoke guard
+    icon: mdi:smoke-detector-variant
+  # Set by the automation while it has switched the ventilation off
+  smoke_guard_stopped:
+    name: Smoke guard stopped the ventilation
+    icon: mdi:fan-off
+
+# Tuning, adjustable from the dashboard. Home Assistant remembers the values across restarts.
+input_number:
+  smoke_guard_factor:
+    name: Smoke guard factor
+    min: 1.5
+    max: 6
+    step: 0.1
+    mode: box
+  smoke_guard_margin:
+    name: Smoke guard margin
+    min: 0
+    max: 50
+    step: 1
+    mode: box
+    unit_of_measurement: μg/m³
+  smoke_guard_limit_max:
+    name: Smoke guard highest limit
+    min: 15
+    max: 100
+    step: 1
+    mode: box
+    unit_of_measurement: μg/m³
+  smoke_guard_absolute:
+    name: Smoke guard absolute limit
+    min: 20
+    max: 200
+    step: 5
+    mode: box
+    unit_of_measurement: μg/m³
+
+template:
+  - sensor:
+      # The PM2.5 level that counts as smoke right now
+      - name: Smoke guard limit
+        unique_id: smoke_guard_limit
+        unit_of_measurement: μg/m³
+        device_class: pm25
+        state_class: measurement
+        state: >
+          {% set f = states('sensor.fmi_background_pm2_5') | float(none) %}
+          {% set t = states('sensor.fmi_background_measured') %}
+          {% set age_h = ((now() - as_datetime(t)).total_seconds() / 3600)
+                         if t not in ['unknown', 'unavailable', 'none', ''] else 99 %}
+          {% set k = states('input_number.smoke_guard_factor') | float(3) %}
+          {% set m = states('input_number.smoke_guard_margin') | float(10) %}
+          {% set cap = states('input_number.smoke_guard_limit_max') | float(35) %}
+          {% if f is none or age_h > 3 %}10
+          {% else %}{{ [[10, k * f, f + m] | max, cap] | min | round(1) }}
+          {% endif %}
+
+  - binary_sensor:
+      # On when the own sensor reads clearly above the regional background. Switches off a little
+      # lower than it switches on, so a reading hovering at the limit doesn't flap.
+      - name: Smoke guard smoke
+        unique_id: smoke_guard_smoke
+        device_class: smoke
+        state: >
+          {% set was_on = this.state == 'on' if this is defined else false %}
+          {% set l = states('sensor.outdoor_pm2_5') | float(none) %}
+          {% set l10 = states('sensor.outdoor_pm10') | float(none) %}
+          {% set absolute = states('input_number.smoke_guard_absolute') | float(50) %}
+          {% set f = states('sensor.fmi_background_pm2_5') | float(none) %}
+          {% set t = states('sensor.fmi_background_measured') %}
+          {% set age_h = ((now() - as_datetime(t)).total_seconds() / 3600)
+                         if t not in ['unknown', 'unavailable', 'none', ''] else 99 %}
+          {% set k = states('input_number.smoke_guard_factor') | float(3) %}
+          {% set m = states('input_number.smoke_guard_margin') | float(10) %}
+          {% set cap = states('input_number.smoke_guard_limit_max') | float(35) %}
+          {% if l is none %}
+            {{ was_on }}
+          {% elif l >= absolute or (l10 is not none and l10 >= absolute * 1.2) %}
+            true
+          {% elif f is none or age_h > 3 %}
+            {# No fresh official reading: fall back to fixed limits #}
+            {{ l > 8 if was_on else l >= 10 }}
+          {% else %}
+            {% set limit_on = [[10, k * f, f + m] | max, cap] | min %}
+            {% set limit_off = [[8, (k - 0.5) * f, f + m * 0.6] | max, limit_on - 2] | min %}
+            {{ l > limit_off if was_on else l >= limit_on }}
+          {% endif %}

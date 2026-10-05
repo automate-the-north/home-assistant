@@ -1,0 +1,180 @@
+blueprint:
+  name: Car block heater by departure time
+  author: Automate the North
+  description: >
+    Switches a car engine block heater on so the car is warm at your departure time,
+    and off again shortly after you leave.
+
+
+    **How it works**
+
+    - Heating starts *heating time* minutes before the departure time. The heating
+    time comes from a sensor you choose (minutes), so you decide how long to heat
+    at each outdoor temperature. A heating time of 0 means no heating that day.
+
+    - The heater switches off a few minutes after departure.
+
+    - If you switch the heater on by hand, it switches itself off after the heating
+    time plus the after-departure buffer, so a forgotten heater never runs all day.
+
+    - If you change the departure time so heating should already be running, it
+    starts immediately.
+
+    - When the schedule toggle is off, this automation never touches the heater.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/automation/automate_the_north/car_block_heater.yaml
+  domain: automation
+  input:
+    heater:
+      name: Heater switch
+      description: The smart plug or relay that powers the block heater.
+      selector:
+        entity:
+          filter:
+            - domain: switch
+    departure_time:
+      name: Departure time
+      description: An input_datetime helper with time only.
+      selector:
+        entity:
+          filter:
+            - domain: input_datetime
+    schedule_enabled:
+      name: Scheduled heating toggle
+      description: An input_boolean that turns scheduled heating on or off.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    heating_time:
+      name: Heating time sensor
+      description: A sensor whose state is the heating time in minutes, usually a template based on the outdoor temperature.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    after_departure:
+      name: Keep heating after departure
+      description: Minutes the heater stays on after the departure time. Also the run time of a manual start on a warm day.
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: min
+
+mode: queued
+max: 10
+
+trigger_variables:
+  heater: !input heater
+  departure: !input departure_time
+  heating_time: !input heating_time
+  buffer: !input after_departure
+
+triggers:
+  # Departure minus heating time
+  - trigger: template
+    id: start
+    value_template: >
+      {% set dep = (state_attr(departure, 'hour') | int(0)) * 60 + (state_attr(departure, 'minute') | int(0)) %}
+      {% set dur = states(heating_time) | int(0) %}
+      {{ dur > 0 and (now().hour * 60 + now().minute) == (dep - dur) % 1440 }}
+  # Departure plus buffer
+  - trigger: template
+    id: end
+    value_template: >
+      {% set dep = (state_attr(departure, 'hour') | int(0)) * 60 + (state_attr(departure, 'minute') | int(0)) %}
+      {{ (now().hour * 60 + now().minute) == (dep + buffer | int(0)) % 1440 }}
+  # Any run (manual or scheduled) ends after heating time + buffer at the latest
+  - trigger: state
+    id: timeout
+    entity_id: !input heater
+    to: 'on'
+    for:
+      minutes: '{{ [states(heating_time) | int(0), 0] | max + buffer | int(0) }}'
+  # Settings changed: start right away if we're already inside the heating window
+  - trigger: state
+    id: settings
+    entity_id:
+      - !input departure_time
+      - !input schedule_enabled
+  # Heating time grew so that the window now includes the current minute
+  - trigger: state
+    id: heating_time
+    entity_id: !input heating_time
+  # After a restart: resume a heating window that started while HA was down
+  - trigger: homeassistant
+    id: ha_start
+    event: start
+  # Safety net for runs whose timer was lost in a restart
+  - trigger: time_pattern
+    id: watchdog
+    minutes: /5
+
+conditions:
+  - condition: state
+    entity_id: !input schedule_enabled
+    state: 'on'
+
+variables:
+  now_min: '{{ now().hour * 60 + now().minute }}'
+  dep_min: "{{ (state_attr(departure, 'hour') | int(0)) * 60 + (state_attr(departure, 'minute') | int(0)) }}"
+  end_min: '{{ (dep_min + buffer | int(0)) % 1440 }}'
+  # Is now_min inside [departure - heating time, departure + buffer)? Wraps past midnight.
+  in_window: >-
+    {%- set dur = states(heating_time) | int(0) -%}
+    {%- set start = (dep_min - dur) % 1440 -%}
+    {{ dur > 0 and ((start <= end_min and start <= now_min and now_min < end_min)
+       or (start > end_min and (now_min >= start or now_min < end_min))) }}
+  # Same test with the heating time before this change (only for heating_time triggers)
+  was_in_window: >-
+    {%- set dur = trigger.from_state.state | int(0) if trigger.id == 'heating_time' else 0 -%}
+    {%- set start = (dep_min - dur) % 1440 -%}
+    {{ dur > 0 and ((start <= end_min and start <= now_min and now_min < end_min)
+       or (start > end_min and (now_min >= start or now_min < end_min))) }}
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: start
+          - condition: template
+            value_template: "{{ is_state(heater, 'off') }}"
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input heater
+
+      - conditions:
+          - condition: trigger
+            id: [settings, heating_time, ha_start]
+          - condition: template
+            value_template: "{{ in_window | bool and not was_in_window | bool and is_state(heater, 'off') }}"
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id: !input heater
+
+      - conditions:
+          - condition: trigger
+            id: [end, timeout]
+          - condition: template
+            value_template: "{{ is_state(heater, 'on') }}"
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input heater
+
+      # Heater left on outside the heating window for longer than a run may last
+      - conditions:
+          - condition: trigger
+            id: [watchdog, ha_start]
+          - condition: template
+            value_template: >-
+              {%- set on_min = (now() - states[heater].last_changed).total_seconds() / 60 -%}
+              {%- set limit = [states(heating_time) | int(0), 0] | max + buffer | int(0) -%}
+              {{ is_state(heater, 'on') and not in_window | bool and on_min >= limit }}
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: !input heater

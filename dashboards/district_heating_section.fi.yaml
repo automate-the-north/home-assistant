@@ -1,0 +1,99 @@
+# Ouman H23:n dashboard-osio. Sections-näkymässä: lisää osio → ⋮ → Muokkaa YAML:na ja liitä tämä.
+type: grid
+cards:
+  - type: heading
+    heading: 'Kaukolämpö'
+    heading_style: title
+    icon: mdi:radiator
+    badges:
+      - type: entity
+        entity: sensor.ouman_outdoor_temperature
+        name: 'Ulkona'
+        icon: mdi:thermometer
+        show_name: false
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- macro t(e) -%}{{ (states(e) | float | round(1) | string) | replace('.', ',') if has_value(e) else '–' }}{%- endmacro -%}
+      {%- set active = [
+        ('binary_sensor.ouman_alarm_dhw_high_temperature', 'käyttövesi liian kuumaa'),
+        ('binary_sensor.ouman_alarm_l1_supply_deviation', 'menovesi poikkeaa asetusarvosta'),
+        ('binary_sensor.ouman_alarm_l1_return_low', 'paluuvesi liian kylmää'),
+        ('binary_sensor.ouman_sensor_fault_m1_outdoor', 'ulkoanturin vika'),
+        ('binary_sensor.ouman_sensor_fault_m2_l1_supply', 'menovesianturin vika'),
+        ('binary_sensor.ouman_sensor_fault_m3_l1_return', 'paluuvesianturin vika'),
+        ('binary_sensor.ouman_sensor_fault_m8_dhw_supply', 'käyttövesianturin vika'),
+        ('binary_sensor.ouman_sensor_fault_m9_dhw_circulation', 'kiertovesianturin vika')
+      ] | selectattr(0, 'is_state', 'on') | map(attribute=1) | list -%}
+      {%- if is_state('binary_sensor.ouman_connection_lost', 'on') -%}
+      ## Ei yhteyttä säätimeen
+      Lämmitys jatkuu säätimen omalla ohjauksella. Tarkista Modbus-yhdyskäytävä.
+      {%- elif active -%}
+      ## Hälytys: {{ active | join(', ') }}
+      Tarkista säädin.
+      {%- elif is_state('binary_sensor.ouman_l1_summer_shutdown', 'on') -%}
+      ## Kesäsulku
+      Tilojen lämmitys on pois. Käyttövesi on {{ t('sensor.ouman_dhw_supply_temperature') }} °C.
+      {%- else -%}
+      ## Lämmitys toimii normaalisti
+      Menovesi {{ t('sensor.ouman_l1_supply_temperature') }} °C (tavoite {{ t('sensor.ouman_l1_supply_setpoint') }} °C), paluuvesi {{ t('sensor.ouman_l1_return_temperature') }} °C. Venttiili {{ states('sensor.ouman_l1_valve_position') }} % auki.
+      {%- endif -%}
+  - type: tile
+    entity: sensor.ouman_l1_supply_temperature
+    name: 'Menovesi'
+    icon: mdi:thermometer-chevron-up
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_return_temperature
+    name: 'Paluuvesi'
+    icon: mdi:thermometer-chevron-down
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_supply_setpoint
+    name: 'Menoveden tavoite'
+    icon: mdi:target
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_l1_valve_position
+    name: 'Venttiili'
+    icon: mdi:valve
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_dhw_supply_temperature
+    name: 'Käyttövesi'
+    icon: mdi:water-thermometer
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.ouman_dhw_circulation_temperature
+    name: 'Käyttöveden kierto'
+    icon: mdi:water-sync
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: history-graph
+    title: 'Viimeiset 24 tuntia'
+    hours_to_show: 24
+    grid_options:
+      columns: full
+    entities:
+      - entity: sensor.ouman_l1_supply_temperature
+        name: 'Menovesi'
+      - entity: sensor.ouman_l1_supply_setpoint
+        name: 'Menoveden tavoite'
+      - entity: sensor.ouman_l1_return_temperature
+        name: 'Paluuvesi'
+      - entity: sensor.ouman_delayed_outdoor_temperature
+        name: 'Ulkona (hidastettu)'

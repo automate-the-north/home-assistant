@@ -1,0 +1,79 @@
+# Dashboard section for the smoke guard. In a Sections view: add section → ⋮ → Edit in YAML, paste this.
+type: grid
+cards:
+  - type: heading
+    heading: Smoke guard
+    heading_style: title
+    icon: mdi:smoke-detector-variant
+    badges:
+      - type: entity
+        entity: sensor.outdoor_pm2_5
+        show_icon: true
+        icon: mdi:blur
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- set l = states('sensor.outdoor_pm2_5') | float(none) -%}
+      {%- set lim = states('sensor.smoke_guard_limit') | float(none) -%}
+      {%- set f = states('sensor.fmi_background_pm2_5') | float(none) -%}
+      {%- if is_state('input_boolean.smoke_guard_enabled', 'off') -%}
+      ## Guard off
+      The ventilation runs as usual and isn't switched off for smoke.
+      {%- elif is_state('input_boolean.smoke_guard_stopped', 'on') and is_state('binary_sensor.smoke_guard_smoke', 'on') -%}
+      ## Ventilation stopped
+      Smoke outside: PM2.5 {{ l }} µg/m³, limit {{ lim }} µg/m³.
+      {%- elif is_state('input_boolean.smoke_guard_stopped', 'on') -%}
+      ## Air is clearing
+      The ventilation restarts once the air has stayed clean for a while.
+      {%- else -%}
+      ## Air is clean
+      PM2.5 {{ l }} µg/m³. Smoke limit {{ lim }} µg/m³{% if f is not none %}, regional background {{ f }} µg/m³{% endif %}.
+      {%- endif -%}
+  - type: tile
+    entity: input_boolean.smoke_guard_enabled
+    name: Smoke guard
+    icon: mdi:smoke-detector-variant
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: toggle
+    icon_tap_action:
+      action: toggle
+  - type: tile
+    entity: fan.ventilation
+    name: Ventilation
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.smoke_guard_limit
+    name: Smoke limit
+    icon: mdi:gauge
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.fmi_background_pm2_5
+    name: Regional background
+    icon: mdi:map-marker-radius
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: entities
+    title: Tuning
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.smoke_guard_factor
+        name: Times the background
+      - entity: input_number.smoke_guard_margin
+        name: Or background plus
+      - entity: input_number.smoke_guard_limit_max
+        name: Highest limit
+      - entity: input_number.smoke_guard_absolute
+        name: Always smoke above

@@ -1,0 +1,63 @@
+# Ilmanvaihdon dashboard-osio. Sections-näkymässä: lisää osio → ⋮ → Muokkaa YAML:na ja liitä tämä.
+type: grid
+cards:
+  - type: heading
+    heading: Ilmanvaihto
+    heading_style: title
+    icon: mdi:hvac
+    badges:
+      - type: entity
+        entity: sensor.bedroom_co2
+        show_icon: true
+        icon: mdi:molecule-co2
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- set co2 = states('sensor.bedroom_co2') | float(none) -%}
+      {%- set above = states('input_number.co2_boost_above') | int(0) -%}
+      {%- set below = states('input_number.co2_boost_below') | int(0) -%}
+      {%- set preset = state_attr('fan.ventilation', 'preset_mode') -%}
+      {%- if states('zone.home') | int(0) == 0 -%}
+      ## Poissa-tila
+      Kukaan ei ole kotona, joten ilmanvaihto käy poissa-asetuksella.
+      {%- elif preset == 'Boost' -%}
+      ## Tehostus päällä
+      CO₂ {{ co2 | int(0) }} ppm. Palaa normaaliksi, kun pitoisuus pysyy alle {{ below }} ppm.
+      {%- elif is_state('input_boolean.co2_boost_enabled', 'off') -%}
+      ## Tehostus pois
+      Ilmanvaihto pysyy normaaliasetuksella hiilidioksidista riippumatta.
+      {%- else -%}
+      ## Normaali
+      CO₂ {{ co2 | int(0) }} ppm. Tehostusaikana tehostus alkaa, kun pitoisuus nousee yli {{ above }} ppm.
+      {%- endif -%}
+  - type: tile
+    entity: fan.ventilation
+    name: Ilmanvaihto
+    vertical: false
+    grid_options:
+      columns: 6
+    state_content: preset_mode
+  - type: tile
+    entity: input_boolean.co2_boost_enabled
+    name: CO₂-tehostus
+    icon: mdi:fan-plus
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: toggle
+    icon_tap_action:
+      action: toggle
+  - type: entities
+    title: Rajat
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.co2_boost_above
+        name: Tehostus yli
+      - entity: input_number.co2_boost_below
+        name: Normaaliksi alle

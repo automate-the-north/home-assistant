@@ -1,0 +1,201 @@
+blueprint:
+  name: Ventilation boost by CO2, away mode by presence
+  author: Automate the North
+  description: >
+    Boosts the ventilation when CO₂ climbs during set hours, and drops to an away preset
+    when nobody is home.
+
+
+    **How it works**
+
+    - When nobody is home, the ventilation runs on the away preset.
+
+    - When someone comes home, it returns to the home preset. A running boost is left alone.
+
+    - During the boost hours (for example overnight, for a bedroom sensor), CO₂ above the
+    upper limit switches to the boost preset. It returns to the home preset once CO₂ has
+    stayed below the lower limit for a while, or when the boost hours end.
+
+    - Turning the boost toggle off ends a boost straight away. Away mode keeps working.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/automation/automate_the_north/ventilation_co2_presence.yaml
+  domain: automation
+  input:
+    ventilation:
+      name: Ventilation
+      description: A fan entity with presets, such as a Vallox unit.
+      selector:
+        entity:
+          filter:
+            - domain: fan
+    co2:
+      name: CO₂ sensor
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: carbon_dioxide
+    boost_enabled:
+      name: Boost toggle
+      description: An input_boolean that turns CO₂ boosting on or off.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    co2_high:
+      name: Boost above
+      description: An input_number with the CO₂ level (ppm) that starts a boost.
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    co2_low:
+      name: Back to normal below
+      description: An input_number with the CO₂ level (ppm) that ends a boost.
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    low_minutes:
+      name: Time below the lower limit
+      description: How long CO₂ must stay below the lower limit before the boost ends.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: min
+    boost_start:
+      name: Boost hours start
+      default: '23:00:00'
+      selector:
+        time: {}
+    boost_end:
+      name: Boost hours end
+      default: '12:00:00'
+      selector:
+        time: {}
+    home_zone:
+      name: Home zone
+      description: Its state is the number of people at home.
+      default: zone.home
+      selector:
+        entity:
+          filter:
+            - domain: zone
+    preset_home:
+      name: Home preset
+      default: Home
+      selector:
+        text: {}
+    preset_away:
+      name: Away preset
+      default: Away
+      selector:
+        text: {}
+    preset_boost:
+      name: Boost preset
+      default: Boost
+      selector:
+        text: {}
+
+mode: restart
+
+trigger_variables:
+  low_minutes: !input low_minutes
+  high_entity: !input co2_high
+  low_entity: !input co2_low
+  co2_entity: !input co2
+
+triggers:
+  - trigger: template
+    id: co2_high
+    value_template: >-
+      {{ states(co2_entity) | float(0) > states(high_entity) | float(850) }}
+  - trigger: template
+    id: co2_low
+    value_template: >-
+      {{ states(co2_entity) | float(9999) < states(low_entity) | float(700) }}
+    for:
+      minutes: '{{ low_minutes | int(10) }}'
+  - trigger: state
+    id: toggle
+    entity_id: !input boost_enabled
+  - trigger: time
+    id: hours_start
+    at: !input boost_start
+  - trigger: time
+    id: hours_end
+    at: !input boost_end
+  - trigger: state
+    id: presence
+    entity_id: !input home_zone
+
+variables:
+  fan_entity: !input ventilation
+  zone_entity: !input home_zone
+  toggle_entity: !input boost_enabled
+  p_home: !input preset_home
+  p_away: !input preset_away
+  p_boost: !input preset_boost
+  anyone_home: '{{ states(zone_entity) | int(0) > 0 }}'
+  current: "{{ state_attr(fan_entity, 'preset_mode') }}"
+  normal: '{{ p_home if anyone_home else p_away }}'
+  co2_is_high: '{{ states(co2_entity) | float(0) > states(high_entity) | float(850) }}'
+
+actions:
+  - choose:
+      # Nobody home: away, whatever else is going on
+      - conditions:
+          - '{{ not anyone_home and current != p_away }}'
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: !input ventilation
+            data:
+              preset_mode: '{{ p_away }}'
+
+      # End a boost: CO₂ is low again, the hours are over, or boosting was turned off
+      - conditions:
+          - '{{ current == p_boost }}'
+          - or:
+              - condition: trigger
+                id: [co2_low, hours_end]
+              - condition: state
+                entity_id: !input boost_enabled
+                state: 'off'
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: !input ventilation
+            data:
+              preset_mode: '{{ normal }}'
+
+      # Start a boost
+      - conditions:
+          - condition: trigger
+            id: [co2_high, toggle, hours_start, presence]
+          - condition: state
+            entity_id: !input boost_enabled
+            state: 'on'
+          - condition: time
+            after: !input boost_start
+            before: !input boost_end
+          - '{{ anyone_home and co2_is_high and current != p_boost }}'
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: !input ventilation
+            data:
+              preset_mode: '{{ p_boost }}'
+
+      # Someone came home: back from away
+      - conditions:
+          - condition: trigger
+            id: presence
+          - '{{ anyone_home and current == p_away }}'
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: !input ventilation
+            data:
+              preset_mode: '{{ p_home }}'

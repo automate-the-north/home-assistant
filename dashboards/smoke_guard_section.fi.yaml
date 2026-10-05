@@ -1,0 +1,80 @@
+# Savuvahdin dashboard-osio. Sections-näkymässä: lisää osio → ⋮ → Muokkaa YAML:na ja liitä tämä.
+type: grid
+cards:
+  - type: heading
+    heading: Savuvahti
+    heading_style: title
+    icon: mdi:smoke-detector-variant
+    badges:
+      - type: entity
+        entity: sensor.outdoor_pm2_5
+        show_icon: true
+        icon: mdi:blur
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- macro n(v) -%}{{ (v | string) | replace('.', ',') }}{%- endmacro -%}
+      {%- set l = states('sensor.outdoor_pm2_5') | float(none) -%}
+      {%- set lim = states('sensor.smoke_guard_limit') | float(none) -%}
+      {%- set f = states('sensor.fmi_background_pm2_5') | float(none) -%}
+      {%- if is_state('input_boolean.smoke_guard_enabled', 'off') -%}
+      ## Savuvahti pois
+      Ilmanvaihto toimii normaalisti eikä sammu savun takia.
+      {%- elif is_state('input_boolean.smoke_guard_stopped', 'on') and is_state('binary_sensor.smoke_guard_smoke', 'on') -%}
+      ## Ilmanvaihto pysäytetty
+      Ulkona on savua: PM2.5 {{ n(l) }} µg/m³, raja {{ n(lim) }} µg/m³.
+      {%- elif is_state('input_boolean.smoke_guard_stopped', 'on') -%}
+      ## Ilma puhdistuu
+      Ilmanvaihto käynnistyy, kun ilma on pysynyt puhtaana hetken.
+      {%- else -%}
+      ## Ilma on puhdasta
+      PM2.5 {{ n(l) }} µg/m³. Savuraja {{ n(lim) }} µg/m³{% if f is not none %}, alueen tausta {{ n(f) }} µg/m³{% endif %}.
+      {%- endif -%}
+  - type: tile
+    entity: input_boolean.smoke_guard_enabled
+    name: Savuvahti
+    icon: mdi:smoke-detector-variant
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: toggle
+    icon_tap_action:
+      action: toggle
+  - type: tile
+    entity: fan.ventilation
+    name: Ilmanvaihto
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.smoke_guard_limit
+    name: Savuraja
+    icon: mdi:gauge
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: tile
+    entity: sensor.fmi_background_pm2_5
+    name: Alueen tausta
+    icon: mdi:map-marker-radius
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: entities
+    title: Säädöt
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.smoke_guard_factor
+        name: Kertaa tausta
+      - entity: input_number.smoke_guard_margin
+        name: Tai tausta plus
+      - entity: input_number.smoke_guard_limit_max
+        name: Korkein raja
+      - entity: input_number.smoke_guard_absolute
+        name: Aina savua yli

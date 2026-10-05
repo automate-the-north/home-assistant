@@ -1,0 +1,94 @@
+# Dashboard section for one car. In a Sections view: add section → ⋮ → Edit in YAML, paste this.
+type: 'grid'
+cards:
+  - type: 'heading'
+    heading: 'Car'
+    heading_style: 'title'
+    icon: 'mdi:car'
+    badges:
+      - type: 'entity'
+        entity: 'sensor.outdoor_temperature'
+        name: 'Outside'
+        show_name: false
+        show_icon: true
+        icon: 'mdi:thermometer'
+        show_state: true
+  - type: 'markdown'
+    text_only: true
+    content: |-
+      {%- set t = states('sensor.outdoor_temperature') | float(none) -%}
+      {%- set dur = states('sensor.car_heating_time') | int(0) -%}
+      {%- set dep = states('input_datetime.car_departure_time')[:5] -%}
+      {%- if is_state('switch.car_block_heater','on') and is_state('input_boolean.car_heating_schedule','off') -%}
+      ## Heater on
+      Scheduled heating is off, so the heater stays on until you switch it off.
+      {%- elif is_state('switch.car_block_heater','on') -%}
+      ## Heating now
+      Ready for departure at {{ dep }}.
+      {%- elif is_state('input_boolean.car_heating_schedule','off') -%}
+      ## Schedule off
+      The heater runs only when you switch it on.
+      {%- elif dur == 0 -%}
+      ## No heating needed
+      It's {{ t | round(1) }} °C outside. The car is ready at {{ dep }} as it is.
+      {%- else -%}
+      ## Heating starts at {{ states('sensor.car_heating_starts') }}
+      {{ dur }} minutes at {{ t | round(1) }} °C, warm by {{ dep }}.
+      {%- endif -%}
+    grid_options:
+      columns: 'full'
+  - type: 'tile'
+    entity: 'switch.car_block_heater'
+    name: 'Block heater'
+    icon: 'mdi:car-seat-heater'
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: 'toggle'
+    icon_tap_action:
+      action: 'toggle'
+    hide_state: true
+  - type: 'tile'
+    entity: 'input_boolean.car_heating_schedule'
+    name: 'Scheduled heating'
+    icon: 'mdi:calendar-clock'
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: 'toggle'
+    icon_tap_action:
+      action: 'toggle'
+  - type: 'tile'
+    entity: 'input_datetime.car_departure_time'
+    name: 'Departure'
+    icon: 'mdi:clock-outline'
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: 'tile'
+    entity: 'sensor.car_heating_time'
+    name: 'Heating time'
+    icon: 'mdi:timer-outline'
+    vertical: false
+    grid_options:
+      columns: 6
+  - type: 'entities'
+    title: 'Heating times'
+    state_color: false
+    grid_options:
+      columns: 'full'
+    entities:
+      - entity: 'input_number.car_heating_minus_20'
+        name: '−20 °C or colder'
+        icon: 'mdi:thermometer'
+      - entity: 'input_number.car_heating_minus_10'
+        name: '−10 … −20 °C'
+        icon: 'mdi:thermometer'
+      - entity: 'input_number.car_heating_minus_5'
+        name: '−5 … −10 °C'
+        icon: 'mdi:thermometer'
+      - entity: 'input_number.car_heating_below_5'
+        name: 'below +5 °C'
+        icon: 'mdi:thermometer'

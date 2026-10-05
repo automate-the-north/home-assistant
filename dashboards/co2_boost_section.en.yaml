@@ -1,0 +1,63 @@
+# Dashboard section for CO₂ boost and away mode. In a Sections view: add section → ⋮ → Edit in YAML, paste this.
+type: grid
+cards:
+  - type: heading
+    heading: Ventilation
+    heading_style: title
+    icon: mdi:hvac
+    badges:
+      - type: entity
+        entity: sensor.bedroom_co2
+        show_icon: true
+        icon: mdi:molecule-co2
+        show_state: true
+  - type: markdown
+    text_only: true
+    grid_options:
+      columns: full
+    content: |-
+      {%- set co2 = states('sensor.bedroom_co2') | float(none) -%}
+      {%- set above = states('input_number.co2_boost_above') | int(0) -%}
+      {%- set below = states('input_number.co2_boost_below') | int(0) -%}
+      {%- set preset = state_attr('fan.ventilation', 'preset_mode') -%}
+      {%- if states('zone.home') | int(0) == 0 -%}
+      ## Away mode
+      Nobody is home, so the ventilation runs on the away setting.
+      {%- elif preset == 'Boost' -%}
+      ## Boosting
+      CO₂ {{ co2 | int(0) }} ppm. Back to normal once it stays below {{ below }} ppm.
+      {%- elif is_state('input_boolean.co2_boost_enabled', 'off') -%}
+      ## Boost off
+      The ventilation stays on its normal setting whatever the CO₂.
+      {%- else -%}
+      ## Normal
+      CO₂ {{ co2 | int(0) }} ppm. During boost hours it boosts above {{ above }} ppm.
+      {%- endif -%}
+  - type: tile
+    entity: fan.ventilation
+    name: Ventilation
+    vertical: false
+    grid_options:
+      columns: 6
+    state_content: preset_mode
+  - type: tile
+    entity: input_boolean.co2_boost_enabled
+    name: CO₂ boost
+    icon: mdi:fan-plus
+    vertical: false
+    grid_options:
+      columns: 6
+    tap_action:
+      action: toggle
+    icon_tap_action:
+      action: toggle
+  - type: entities
+    title: Limits
+    state_color: false
+    grid_options:
+      columns: full
+    entities:
+      - entity: input_number.co2_boost_above
+        name: Boost above
+      - entity: input_number.co2_boost_below
+        name: Back to normal below
