@@ -18,7 +18,7 @@ cards:
       {%- set p = states('sensor.electricity_price_now') | float(none) -%}
       {%- set lvl = states('sensor.electricity_price_level') -%}
       {%- set pct = state_attr('sensor.electricity_price_level', 'percent_vs_average') | int(0) -%}
-      {%- set w = 'sensor.cheapest_window_start' -%}
+      {%- set w = 'sensor.cheapest_window' -%}
       ## {{ '%.2f' | format(p) if p is not none else '–' }} c/kWh right now
       {% if lvl in ['cheap', 'normal', 'expensive'] -%}
       {{ {'cheap': 'Cheap', 'normal': 'Normal', 'expensive': 'Expensive'}[lvl] }},
@@ -49,18 +49,20 @@ cards:
     vertical: false
     grid_options:
       columns: 6
-  - type: tile
-    entity: sensor.cheapest_window_price
+  - type: entity
+    entity: sensor.cheapest_window
+    attribute: average_price
+    unit: c/kWh
     name: Cheapest window
     icon: mdi:cash-check
-    vertical: false
     grid_options:
       columns: 6
-  - type: tile
-    entity: sensor.cheapest_window_saving
+  - type: entity
+    entity: sensor.cheapest_window
+    attribute: saving
+    unit: c/kWh
     name: Saving by waiting
     icon: mdi:piggy-bank
-    vertical: false
     grid_options:
       columns: 6
   - type: entities

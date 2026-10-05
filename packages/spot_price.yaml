@@ -1,5 +1,7 @@
 # Spot electricity price with VAT and margin, 15-minute periods, and the cheapest time window.
 # Save as config/packages/spot_price.yaml (packages must be enabled in configuration.yaml).
+# The cheapest window at the end uses the template blueprint
+# blueprints/template/automate_the_north/cheapest_window.yaml; install that first.
 #
 # Requires Home Assistant's built-in Nord Pool integration. The entity IDs below assume
 # area FI (sensor.nord_pool_fi_*); change "fi" and "FI" if you use another area.
@@ -48,10 +50,12 @@ input_number:
     icon: mdi:clock-end
 
 template:
+  # Some unique_ids (spot_hinta_nyt etc.) come from the first version of this package.
+  # They are kept so that upgraded installs keep their entity IDs and history.
   # Current and next price. These update as soon as the Nord Pool sensors change.
   - sensor:
       - name: Electricity price now
-        unique_id: electricity_price_now
+        unique_id: spot_hinta_nyt
         unit_of_measurement: c/kWh
         state_class: measurement
         icon: mdi:flash
@@ -63,7 +67,7 @@ template:
 
       # The Energy dashboard expects EUR/kWh. A c/kWh price would make costs 100 times too high.
       - name: Electricity price now EUR
-        unique_id: electricity_price_now_eur
+        unique_id: spot_hinta_nyt_eur
         unit_of_measurement: EUR/kWh
         state_class: measurement
         icon: mdi:currency-eur
@@ -74,7 +78,7 @@ template:
           {{ (states('sensor.nord_pool_fi_current_price') | float(0) * (1 + vat) + margin / 100) | round(5) }}
 
       - name: Electricity price next
-        unique_id: electricity_price_next
+        unique_id: spot_hinta_seuraava
         unit_of_measurement: c/kWh
         icon: mdi:flash-outline
         availability: "{{ has_value('sensor.nord_pool_fi_next_price') }}"
@@ -99,11 +103,14 @@ template:
                        / states('sensor.electricity_price_average_24h') | float(1) %}
             {{ ((r - 1) * 100) | round(0) | int }}
 
-  # The full 15-minute price curve and the cheapest window. Runs every 15 minutes, when
+  # The full 15-minute price curve. Runs every 15 minutes, when
   # Nord Pool publishes new prices, and when you change a setting.
   - triggers:
       - trigger: homeassistant
         event: start
+      # Recalculate right after a template reload too, not only on the next quarter
+      - trigger: event
+        event_type: event_template_reloaded
       - trigger: time_pattern
         minutes: /15
       - trigger: state
@@ -112,9 +119,6 @@ template:
         entity_id:
           - input_number.electricity_margin
           - input_number.electricity_vat
-          - input_number.cheapest_window_minutes
-          - input_number.cheapest_window_earliest
-          - input_number.cheapest_window_latest
 
     actions:
       - variables:
@@ -162,46 +166,10 @@ template:
             {% endfor %}
             {{ ns.out }}
 
-          # Cheapest continuous window that fits entirely between the earliest start and the
-          # latest end. It shows the whole day's best window, even once it has passed;
-          # after the latest end it moves on to tomorrow.
-          best: >
-            {% set n = ((states('input_number.cheapest_window_minutes') | float(60)) / 15)
-                       | round(0, 'ceil') | int %}
-            {% set h0 = states('input_number.cheapest_window_earliest') | int(0) %}
-            {% set h1 = states('input_number.cheapest_window_latest') | int(24) %}
-            {% set midnight = today_at('00:00') %}
-            {% set nowts = now().timestamp() %}
-            {% set d = 0 if nowts < (midnight + timedelta(hours=h1)).timestamp() else 1 %}
-            {% set ws = (midnight + timedelta(days=d, hours=h0)).timestamp() %}
-            {% set we = (midnight + timedelta(days=d, hours=h1)).timestamp() %}
-            {% set cand = all_prices | selectattr('ts', 'ge', ws) | selectattr('ts', 'lt', we) | list %}
-            {% set ns = namespace(start=none, avg=none, end=none, s_ts=0, e_ts=0) %}
-            {% if n > 0 and h1 > h0 and cand | length >= n %}
-              {% for i in range(0, (cand | length) - n + 1) %}
-                {% set w = cand[i:i + n] %}
-                {% if w[-1].ts + 900 <= we %}
-                  {% set avg = (w | map(attribute='p') | sum) / n %}
-                  {% if ns.avg is none or avg < ns.avg %}
-                    {% set ns.avg = avg %}
-                    {% set ns.start = w[0].t %}
-                    {% set ns.end = (w[-1].ts + 900) | timestamp_local %}
-                    {% set ns.s_ts = w[0].ts %}
-                    {% set ns.e_ts = w[-1].ts + 900 %}
-                  {% endif %}
-                {% endif %}
-              {% endfor %}
-            {% endif %}
-            {% set status = none if ns.start is none else
-                            ('past' if ns.e_ts <= nowts else
-                            ('active' if ns.s_ts <= nowts else 'upcoming')) %}
-            {{ {'start': ns.start, 'end': ns.end, 'slots': n, 'day': d, 'status': status,
-                'avg': (ns.avg | round(2)) if ns.avg is not none else none} }}
-
     sensor:
       # The price curve for charts. The state is the number of periods, so it has no unit.
       - name: Electricity prices
-        unique_id: electricity_prices
+        unique_id: spot_hinnat_15min
         icon: mdi:chart-bar
         state: '{{ all_prices | count }}'
         attributes:
@@ -209,7 +177,7 @@ template:
           tomorrow_available: '{{ (r_tomorrow.FI | default([]) | count) > 0 }}'
 
       - name: Electricity price average 24h
-        unique_id: electricity_price_average_24h
+        unique_id: spot_keskihinta_24h
         unit_of_measurement: c/kWh
         icon: mdi:chart-line
         availability: '{{ all_prices | count > 0 }}'
@@ -218,42 +186,10 @@ template:
           {% set fut = all_prices | selectattr('ts', 'ge', t0) | selectattr('ts', 'le', t0 + 86400) | list %}
           {{ ((fut | map(attribute='p') | sum) / (fut | length)) | round(2) if fut | length > 0 else 'unknown' }}
 
-      - name: Cheapest window start
-        unique_id: cheapest_window_start
-        device_class: timestamp
-        icon: mdi:clock-check-outline
-        availability: '{{ best.start is not none }}'
-        state: '{{ best.start }}'
-        attributes:
-          end: '{{ best.end }}'
-          average_price: '{{ best.avg }}'
-          periods: '{{ best.slots }}'
-          day: "{{ 'today' if best.day == 0 else 'tomorrow' }}"
-          status: '{{ best.status }}'
-
-      - name: Cheapest window price
-        unique_id: cheapest_window_price
-        unit_of_measurement: c/kWh
-        icon: mdi:cash-check
-        availability: '{{ best.avg is not none }}'
-        state: '{{ best.avg }}'
-
-      # How much cheaper per kWh the window is than starting a run of the same length now
-      - name: Cheapest window saving
-        unique_id: cheapest_window_saving
-        unit_of_measurement: c/kWh
-        icon: mdi:piggy-bank
-        availability: '{{ best.avg is not none }}'
-        state: >
-          {% set n = best.slots | int(4) %}
-          {% set now_run = all_prices | selectattr('ts', 'ge', now().timestamp()) | list %}
-          {{ ((now_run[:n] | map(attribute='p') | sum) / n - best.avg | float(0)) | round(2)
-             if now_run | length >= n else 'unknown' }}
-
     binary_sensor:
       # On when the current price is at or below the next 24 hours' average. For automations.
       - name: Electricity cheap now
-        unique_id: electricity_cheap_now
+        unique_id: spot_halpa_nyt
         icon: mdi:thumb-up
         availability: '{{ all_prices | count > 0 }}'
         state: >
@@ -262,3 +198,15 @@ template:
           {{ fut | length > 0
              and states('sensor.electricity_price_now') | float(999)
                  <= (fut | map(attribute='p') | sum) / (fut | length) }}
+
+  # The cheapest window: 60 minutes between 00 and 24 by default, adjustable from the dashboard.
+  # Add more windows (sauna, laundry...) by copying this block with their own input_numbers.
+  - use_blueprint:
+      path: automate_the_north/cheapest_window.yaml
+      input:
+        prices: sensor.electricity_prices
+        minutes: input_number.cheapest_window_minutes
+        earliest: input_number.cheapest_window_earliest
+        latest: input_number.cheapest_window_latest
+    name: Cheapest window
+    unique_id: cheapest_window

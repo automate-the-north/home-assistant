@@ -1,0 +1,119 @@
+blueprint:
+  name: Cheapest electricity window
+  author: Automate the North
+  description: >
+    A sensor with the start of the cheapest continuous window of electricity, for
+    example for the sauna, laundry or charging. The window has a fixed length and
+    must fit between an earliest start and a latest end time.
+
+
+    The sensor shows the whole day's best window, even after it has passed, and
+    moves on to tomorrow once the latest end time is over. Attributes: end,
+    average_price, saving (how much cheaper per kWh than starting a run of the same
+    length now), periods, day (today/tomorrow) and status (upcoming/active/past).
+
+
+    Needs a price curve sensor with a `prices` attribute: a list of
+    `{ts: epoch seconds, p: price}` items in 15-minute steps, as made by the
+    Automate the North spot price package.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/template/automate_the_north/cheapest_window.yaml
+  domain: template
+  input:
+    prices:
+      name: Price curve sensor
+      description: A sensor with a `prices` attribute (list of `ts` and `p`).
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+    minutes:
+      name: Window length
+      description: An input_number with the length of the window in minutes.
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    earliest:
+      name: Earliest start
+      description: An input_number with the earliest start hour (0–23).
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+    latest:
+      name: Latest end
+      description: An input_number with the latest end hour (1–24).
+      selector:
+        entity:
+          filter:
+            - domain: input_number
+
+# Recalculated every 15 minutes, after a restart or template reload, when prices change and when you change a setting
+triggers:
+  - trigger: homeassistant
+    event: start
+  # Recalculate right after a template reload too, not only on the next quarter
+  - trigger: event
+    event_type: event_template_reloaded
+  - trigger: time_pattern
+    minutes: /15
+  - trigger: state
+    entity_id:
+      - !input prices
+      - !input minutes
+      - !input earliest
+      - !input latest
+
+actions:
+  - variables:
+      prices_entity: !input prices
+      minutes_entity: !input minutes
+      earliest_entity: !input earliest
+      latest_entity: !input latest
+      all_prices: "{{ state_attr(prices_entity, 'prices') or [] }}"
+      best: >
+        {% set n = ((states(minutes_entity) | float(60)) / 15) | round(0, 'ceil') | int %}
+        {% set h0 = states(earliest_entity) | int(0) %}
+        {% set h1 = states(latest_entity) | int(24) %}
+        {% set midnight = today_at('00:00') %}
+        {% set nowts = now().timestamp() %}
+        {% set d = 0 if nowts < (midnight + timedelta(hours=h1)).timestamp() else 1 %}
+        {% set ws = (midnight + timedelta(days=d, hours=h0)).timestamp() %}
+        {% set we = (midnight + timedelta(days=d, hours=h1)).timestamp() %}
+        {% set cand = all_prices | selectattr('ts', 'ge', ws) | selectattr('ts', 'lt', we) | list %}
+        {% set ns = namespace(avg=none, s_ts=0, e_ts=0) %}
+        {% if n > 0 and h1 > h0 and cand | length >= n %}
+          {% for i in range(0, (cand | length) - n + 1) %}
+            {% set w = cand[i:i + n] %}
+            {% if w[-1].ts + 900 <= we %}
+              {% set avg = (w | map(attribute='p') | sum) / n %}
+              {% if ns.avg is none or avg < ns.avg %}
+                {% set ns.avg = avg %}
+                {% set ns.s_ts = w[0].ts %}
+                {% set ns.e_ts = w[-1].ts + 900 %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        {% set now_run = all_prices | selectattr('ts', 'ge', nowts) | list %}
+        {% set saving = ((now_run[:n] | map(attribute='p') | sum) / n - ns.avg) | round(2)
+                        if ns.avg is not none and n > 0 and now_run | length >= n else none %}
+        {{ {'start': (ns.s_ts | timestamp_local) if ns.avg is not none else none,
+            'end': (ns.e_ts | timestamp_local) if ns.avg is not none else none,
+            'avg': (ns.avg | round(2)) if ns.avg is not none else none,
+            'saving': saving, 'slots': n, 'day': d,
+            'status': none if ns.avg is none else
+                      ('past' if ns.e_ts <= nowts else ('active' if ns.s_ts <= nowts else 'upcoming'))} }}
+
+sensor:
+  device_class: timestamp
+  icon: mdi:clock-check-outline
+  availability: '{{ best.start is not none }}'
+  state: '{{ best.start }}'
+  attributes:
+    end: '{{ best.end }}'
+    average_price: '{{ best.avg }}'
+    saving: '{{ best.saving }}'
+    periods: '{{ best.slots }}'
+    day: "{{ 'today' if best.day == 0 else 'tomorrow' }}"
+    status: '{{ best.status }}'

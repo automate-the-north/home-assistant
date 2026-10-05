@@ -36,7 +36,7 @@ series:
     data_generator: |
       const d0 = new Date(); d0.setHours(0, 0, 0, 0);
       const s = d0.getTime(), e = s + 86400000;
-      const w = hass.states['sensor.cheapest_window_start'];
+      const w = hass.states['sensor.cheapest_window'];
       const ws = w && w.attributes.end ? new Date(w.state).getTime() : 0;
       const we = w && w.attributes.end ? new Date(w.attributes.end).getTime() : 0;
       return entity.attributes.prices
