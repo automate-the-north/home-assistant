@@ -1,0 +1,180 @@
+blueprint:
+  name: Ventilation boost from the cooker hood
+  author: Automate the North
+  description: >
+    Switches the ventilation to a boost preset while the cooker hood runs, measured with a
+    smart plug, and back once the hood has been off for a while.
+
+
+    **How it works**
+
+    - When the hood's power stays above the threshold, the ventilation switches to the
+    boost preset and a flag remembers that this automation did it.
+
+    - When the hood has been off for the after-run time, the ventilation returns to the home
+    preset, or to the away preset if nobody is home.
+
+    - It returns only if the boost preset is still on. If you or another automation changed
+    the preset during cooking, that change stays.
+
+    - If the ventilation is off (for example a smoke guard stopped it), the hood never
+    switches it on.
+
+
+    **Vallox units:** pick **Fireplace** as the boost preset. It is the profile the unit's
+    own web control calls Custom, with adjustable supply and extract fans. Home Assistant's
+    **Extra** preset is the programmable input profile instead.
+  source_url: https://github.com/automate-the-north/home-assistant/blob/main/blueprints/automation/automate_the_north/kitchen_hood_boost.yaml
+  domain: automation
+  input:
+    power:
+      name: Hood power
+      description: The power sensor of the smart plug the cooker hood is plugged into.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: power
+    threshold:
+      name: Threshold
+      description: >
+        The hood counts as running above this. Pick a value between the plug's reading with
+        the hood off and its lowest fan speed.
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 500
+          unit_of_measurement: W
+    on_seconds:
+      name: Delay before boosting
+      description: How long the power must stay above the threshold.
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 300
+          unit_of_measurement: s
+    off_minutes:
+      name: After-run time
+      description: >
+        How long the hood must stay off before the ventilation returns. Clears the last of
+        the steam, and changing the hood's speed doesn't end the boost.
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: min
+    ventilation:
+      name: Ventilation
+      description: A fan entity with presets, such as a Vallox unit.
+      selector:
+        entity:
+          filter:
+            - domain: fan
+    active:
+      name: Boost flag
+      description: An input_boolean this automation turns on while the hood boost is running.
+      selector:
+        entity:
+          filter:
+            - domain: input_boolean
+    preset_boost:
+      name: Boost preset
+      description: Ideally one with more supply than extract air, to replace what the hood blows out.
+      default: Fireplace
+      selector:
+        text: {}
+    preset_home:
+      name: Home preset
+      default: Home
+      selector:
+        text: {}
+    preset_away:
+      name: Away preset
+      default: Away
+      selector:
+        text: {}
+    home_zone:
+      name: Home zone
+      description: Its state is the number of people at home.
+      default: zone.home
+      selector:
+        entity:
+          filter:
+            - domain: zone
+
+mode: queued
+max: 10
+
+# trigger_variables are available in triggers (the 'for' below) as well as in actions
+trigger_variables:
+  power_entity: !input power
+  threshold: !input threshold
+  on_seconds: !input on_seconds
+  off_minutes: !input off_minutes
+
+triggers:
+  - trigger: template
+    id: hood_on
+    value_template: '{{ states(power_entity) | float(0) > threshold | float(30) }}'
+    for:
+      seconds: '{{ on_seconds | int(20) }}'
+  - trigger: template
+    id: hood_off
+    value_template: '{{ states(power_entity) | float(0) <= threshold | float(30) }}'
+    for:
+      minutes: '{{ off_minutes | int(2) }}'
+
+variables:
+  fan_entity: !input ventilation
+  zone_entity: !input home_zone
+  p_boost: !input preset_boost
+  p_home: !input preset_home
+  p_away: !input preset_away
+  current: "{{ state_attr(fan_entity, 'preset_mode') }}"
+  normal: '{{ p_home if states(zone_entity) | int(0) > 0 else p_away }}'
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: hood_on
+          - condition: state
+            entity_id: !input ventilation
+            state: 'on'
+          - '{{ current != p_boost }}'
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: !input ventilation
+            data:
+              preset_mode: '{{ p_boost }}'
+          - action: input_boolean.turn_on
+            target:
+              entity_id: !input active
+
+      - conditions:
+          - condition: trigger
+            id: hood_off
+          - condition: state
+            entity_id: !input active
+            state: 'on'
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: !input active
+          # Only undo our own boost: leave the preset alone if someone changed it, or if
+          # the ventilation is off
+          - if:
+              - condition: state
+                entity_id: !input ventilation
+                state: 'on'
+              - '{{ current == p_boost }}'
+            then:
+              - action: fan.set_preset_mode
+                target:
+                  entity_id: !input ventilation
+                data:
+                  preset_mode: '{{ normal }}'
